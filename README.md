@@ -10,6 +10,7 @@ Release artifacts are built locally, then uploaded here as GitHub Release assets
 - Public release tags and assets
 - Firefox update feed (`updates.json`)
 - Latest signed Firefox package (`firefox/latest/hubspot-companycam-viewer.xpi`)
+- Privacy policy (`privacy-policy.html`)
 - Issue templates for bugs/features
 
 ## One-Time Setup (Repo Settings)
@@ -45,3 +46,8 @@ Release artifacts are built locally, then uploaded here as GitHub Release assets
 - Chrome Web Store upload + publish
 - Firefox signing
 - `updates.json` + `firefox/latest/hubspot-companycam-viewer.xpi` update
+
+## Privacy Policy URL
+
+Use this URL in Chrome Web Store listing privacy fields:
+- `https://awcook97.github.io/cc_hs_extension/privacy-policy.html`
