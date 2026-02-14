@@ -1,0 +1,244 @@
+name: Publish Browser Extension Assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to publish (example: v0.2.0)'
+        required: true
+        type: string
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  FIREFOX_ADDON_ID: cc-hs-extension@awcook97.github.io
+  FIREFOX_XPI_BASENAME: hubspot-companycam-viewer.xpi
+  FIREFOX_UPDATE_LINK: https://awcook97.github.io/cc_hs_extension/firefox/latest/hubspot-companycam-viewer.xpi
+
+jobs:
+  publish-chrome:
+    name: Publish Chrome Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve release tag
+        env:
+          INPUT_RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            TAG="$INPUT_RELEASE_TAG"
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
+
+          [[ -n "$TAG" ]] || { echo "::error::Release tag could not be resolved."; exit 1; }
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "Publishing tag: $TAG"
+
+      - name: Download Chrome zip from this release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p release-artifacts
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "hubspot-companycam-viewer-*-standard_dev.zip" \
+            --dir release-artifacts
+
+          ZIP_FILE=$(find release-artifacts -type f -name '*-standard_dev.zip' | sort | head -n 1)
+          [[ -n "$ZIP_FILE" ]] || { echo "::error::Chrome release zip not found on release $RELEASE_TAG."; exit 1; }
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+          echo "Using package: $ZIP_FILE"
+
+      - name: Validate required secrets
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: |
+          [[ -n "$CWS_CLIENT_ID" ]] || { echo "::error::Missing CWS_CLIENT_ID secret"; exit 1; }
+          [[ -n "$CWS_CLIENT_SECRET" ]] || { echo "::error::Missing CWS_CLIENT_SECRET secret"; exit 1; }
+          [[ -n "$CWS_REFRESH_TOKEN" ]] || { echo "::error::Missing CWS_REFRESH_TOKEN secret"; exit 1; }
+          [[ -n "$CWS_PUBLISHER_ID" ]] || { echo "::error::Missing CWS_PUBLISHER_ID secret"; exit 1; }
+          [[ -n "$CWS_EXTENSION_ID" ]] || { echo "::error::Missing CWS_EXTENSION_ID secret"; exit 1; }
+
+      - name: Mint OAuth access token for Chrome Web Store API
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          TOKEN_RESPONSE=$(curl -sS -X POST https://oauth2.googleapis.com/token \
+            -d "client_id=${CWS_CLIENT_ID}" \
+            -d "client_secret=${CWS_CLIENT_SECRET}" \
+            -d "refresh_token=${CWS_REFRESH_TOKEN}" \
+            -d "grant_type=refresh_token")
+          ACCESS_TOKEN=$(python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('access_token',''))" <<< "$TOKEN_RESPONSE")
+          [[ -n "$ACCESS_TOKEN" ]] || { echo "::error::Unable to mint OAuth token"; echo "$TOKEN_RESPONSE"; exit 1; }
+          echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> "$GITHUB_ENV"
+
+      - name: Upload package to Chrome Web Store draft
+        env:
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: |
+          HTTP_CODE=$(curl -sS -o cws-upload.json -w "%{http_code}" \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -X POST \
+            -T "$ZIP_FILE" \
+            "https://chromewebstore.googleapis.com/upload/v2/publishers/${CWS_PUBLISHER_ID}/items/${CWS_EXTENSION_ID}:upload")
+          cat cws-upload.json
+          [[ "$HTTP_CODE" =~ ^2 ]] || { echo "::error::CWS upload failed with status $HTTP_CODE"; exit 1; }
+
+      - name: Publish uploaded draft in Chrome Web Store
+        env:
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: |
+          HTTP_CODE=$(curl -sS -o cws-publish.json -w "%{http_code}" \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -X POST \
+            "https://chromewebstore.googleapis.com/v2/publishers/${CWS_PUBLISHER_ID}/items/${CWS_EXTENSION_ID}:publish")
+          cat cws-publish.json
+          [[ "$HTTP_CODE" =~ ^2 ]] || { echo "::error::CWS publish failed with status $HTTP_CODE"; exit 1; }
+
+  publish-firefox:
+    name: Sign Firefox Package and Update Feed
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve release tag
+        env:
+          INPUT_RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            TAG="$INPUT_RELEASE_TAG"
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
+
+          [[ -n "$TAG" ]] || { echo "::error::Release tag could not be resolved."; exit 1; }
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          echo "Publishing tag: $TAG"
+
+      - name: Download unsigned Firefox xpi from this release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p release-artifacts
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "hubspot-companycam-viewer-*-firefox.xpi" \
+            --dir release-artifacts
+
+          UNSIGNED_XPI=$(find release-artifacts -type f -name '*-firefox.xpi' | sort | head -n 1)
+          [[ -n "$UNSIGNED_XPI" ]] || { echo "::error::Unsigned Firefox xpi not found on release $RELEASE_TAG."; exit 1; }
+          echo "UNSIGNED_XPI=$UNSIGNED_XPI" >> "$GITHUB_ENV"
+          echo "Using package: $UNSIGNED_XPI"
+
+      - name: Validate required secrets
+        env:
+          AMO_API_KEY: ${{ secrets.AMO_API_KEY }}
+          AMO_API_SECRET: ${{ secrets.AMO_API_SECRET }}
+        run: |
+          [[ -n "$AMO_API_KEY" ]] || { echo "::error::Missing AMO_API_KEY secret"; exit 1; }
+          [[ -n "$AMO_API_SECRET" ]] || { echo "::error::Missing AMO_API_SECRET secret"; exit 1; }
+
+      - name: Unpack unsigned xpi into source directory
+        run: |
+          python3 - "$UNSIGNED_XPI" <<'PY'
+          import pathlib
+          import shutil
+          import sys
+          import zipfile
+
+          src = pathlib.Path(sys.argv[1])
+          dst = pathlib.Path("firefox-source")
+          if dst.exists():
+              shutil.rmtree(dst)
+          dst.mkdir(parents=True, exist_ok=True)
+
+          with zipfile.ZipFile(src, "r") as zf:
+              zf.extractall(dst)
+          PY
+
+      - name: Setup Node.js for web-ext
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Sign Firefox extension
+        env:
+          AMO_API_KEY: ${{ secrets.AMO_API_KEY }}
+          AMO_API_SECRET: ${{ secrets.AMO_API_SECRET }}
+        run: |
+          npm install --global web-ext
+          web-ext sign \
+            --source-dir firefox-source \
+            --artifacts-dir web-ext-artifacts \
+            --channel unlisted \
+            --api-key "$AMO_API_KEY" \
+            --api-secret "$AMO_API_SECRET"
+
+      - name: Capture signed xpi path
+        run: |
+          SIGNED_XPI=$(find web-ext-artifacts -type f -name '*.xpi' | sort | head -n 1)
+          [[ -n "$SIGNED_XPI" ]] || { echo "::error::Signed XPI was not generated"; exit 1; }
+          echo "SIGNED_XPI=$SIGNED_XPI" >> "$GITHUB_ENV"
+
+      - name: Publish signed xpi + updates.json
+        env:
+          ADDON_ID: ${{ env.FIREFOX_ADDON_ID }}
+          UPDATE_LINK: ${{ env.FIREFOX_UPDATE_LINK }}
+        run: |
+          mkdir -p "firefox/latest"
+          cp "$SIGNED_XPI" "firefox/latest/$FIREFOX_XPI_BASENAME"
+
+          python3 - "$ADDON_ID" "$RELEASE_VERSION" "$UPDATE_LINK" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          addon_id = sys.argv[1]
+          version = sys.argv[2]
+          update_link = sys.argv[3]
+
+          out = {
+              "addons": {
+                  addon_id: {
+                      "updates": [
+                          {
+                              "version": version,
+                              "update_link": update_link,
+                          }
+                      ]
+                  }
+              }
+          }
+
+          path = pathlib.Path("updates.json")
+          path.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
+          PY
+
+      - name: Commit updates feed changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add updates.json "firefox/latest/$FIREFOX_XPI_BASENAME"
+          if git diff --cached --quiet; then
+            echo "No release-repo changes to commit."
+            exit 0
+          fi
+          git commit -m "release: firefox ${RELEASE_VERSION}"
+          git push origin HEAD:main
