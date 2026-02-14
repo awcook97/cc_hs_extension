@@ -1,53 +1,44 @@
-# HubSpot CompanyCam Extension Releases
+# HubSpot CompanyCam Viewer
 
-This public repository is the distribution channel for the extension.
+Fast image preview extension for teams who keep CompanyCam URLs in HubSpot fields.
 
-Source code lives in the private development repository.
-Release artifacts are built locally, then uploaded here as GitHub Release assets.
+## What It Does
 
-## What Lives Here
+- Detects CompanyCam image URLs in HubSpot records
+- Opens large image previews on hover/docked/popup modes
+- Supports quick keyboard/wheel navigation through image sets
+- Keeps viewer behavior configurable through extension settings
 
-- Public release tags and assets
-- Firefox update feed (`updates.json`)
-- Latest signed Firefox package (`firefox/latest/hubspot-companycam-viewer.xpi`)
-- Privacy policy (`privacy-policy.html`)
-- Issue templates for bugs/features
+## Install
 
-## One-Time Setup (Repo Settings)
+### Firefox
 
-1. Enable GitHub Pages for this repo.
-2. Set Pages source to `main` branch root.
-3. Confirm this URL works:
+Use the latest signed package:
+- `https://awcook97.github.io/cc_hs_extension/firefox/latest/hubspot-companycam-viewer.xpi`
+
+Firefox update feed:
 - `https://awcook97.github.io/cc_hs_extension/updates.json`
 
-4. Add repository secrets:
-- `CWS_CLIENT_ID`
-- `CWS_CLIENT_SECRET`
-- `CWS_REFRESH_TOKEN`
-- `CWS_PUBLISHER_ID`
-- `CWS_EXTENSION_ID`
-- `AMO_API_KEY`
-- `AMO_API_SECRET`
+### Chrome
 
-## Per Release
+Chrome Web Store publication is handled manually by maintainers.
 
-1. In the private source repo, build assets locally:
-- `bash build.sh release`
+- Release package for Chrome (when needed): `hubspot-companycam-viewer-X.Y.Z-standard_dev.zip`
+- Releases page: `https://github.com/awcook97/cc_hs_extension/releases`
 
-2. In this public repo, create release tag `vX.Y.Z`.
+## Privacy
 
-3. Upload these files from the private repo `build/` folder to that release:
-- `hubspot-companycam-viewer-X.Y.Z-standard_dev.zip`
-- `hubspot-companycam-viewer-X.Y.Z-firefox.xpi`
-
-4. Publish the release.
-
-5. Workflow `.github/workflows/publish.yml` runs and does:
-- Chrome Web Store upload + publish
-- Firefox signing
-- `updates.json` + `firefox/latest/hubspot-companycam-viewer.xpi` update
-
-## Privacy Policy URL
-
-Use this URL in Chrome Web Store listing privacy fields:
+Privacy policy:
 - `https://awcook97.github.io/cc_hs_extension/privacy-policy.html`
+
+## Support
+
+Bug reports and feature requests:
+- `https://github.com/awcook97/cc_hs_extension/issues`
+
+## Release Assets
+
+This repository is the public release channel and contains:
+- public release tags and downloadable assets
+- Firefox update metadata (`updates.json`)
+- latest signed Firefox package (`firefox/latest/hubspot-companycam-viewer.xpi`)

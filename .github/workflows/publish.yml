@@ -1,4 +1,4 @@
-name: Publish Browser Extension Assets
+name: Publish Firefox Extension Assets
 
 on:
   workflow_dispatch:
@@ -19,94 +19,6 @@ env:
   FIREFOX_UPDATE_LINK: https://awcook97.github.io/cc_hs_extension/firefox/latest/hubspot-companycam-viewer.xpi
 
 jobs:
-  publish-chrome:
-    name: Publish Chrome Package
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Resolve release tag
-        env:
-          INPUT_RELEASE_TAG: ${{ github.event.inputs.release_tag }}
-        run: |
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-            TAG="$INPUT_RELEASE_TAG"
-          else
-            TAG="$GITHUB_REF_NAME"
-          fi
-
-          [[ -n "$TAG" ]] || { echo "::error::Release tag could not be resolved."; exit 1; }
-          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
-          echo "Publishing tag: $TAG"
-
-      - name: Download Chrome zip from this release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p release-artifacts
-          gh release download "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern "hubspot-companycam-viewer-*-standard_dev.zip" \
-            --dir release-artifacts
-
-          ZIP_FILE=$(find release-artifacts -type f -name '*-standard_dev.zip' | sort | head -n 1)
-          [[ -n "$ZIP_FILE" ]] || { echo "::error::Chrome release zip not found on release $RELEASE_TAG."; exit 1; }
-          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-          echo "Using package: $ZIP_FILE"
-
-      - name: Validate required secrets
-        env:
-          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
-          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
-          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
-          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
-          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
-        run: |
-          [[ -n "$CWS_CLIENT_ID" ]] || { echo "::error::Missing CWS_CLIENT_ID secret"; exit 1; }
-          [[ -n "$CWS_CLIENT_SECRET" ]] || { echo "::error::Missing CWS_CLIENT_SECRET secret"; exit 1; }
-          [[ -n "$CWS_REFRESH_TOKEN" ]] || { echo "::error::Missing CWS_REFRESH_TOKEN secret"; exit 1; }
-          [[ -n "$CWS_PUBLISHER_ID" ]] || { echo "::error::Missing CWS_PUBLISHER_ID secret"; exit 1; }
-          [[ -n "$CWS_EXTENSION_ID" ]] || { echo "::error::Missing CWS_EXTENSION_ID secret"; exit 1; }
-
-      - name: Mint OAuth access token for Chrome Web Store API
-        env:
-          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
-          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
-          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
-        run: |
-          TOKEN_RESPONSE=$(curl -sS -X POST https://oauth2.googleapis.com/token \
-            -d "client_id=${CWS_CLIENT_ID}" \
-            -d "client_secret=${CWS_CLIENT_SECRET}" \
-            -d "refresh_token=${CWS_REFRESH_TOKEN}" \
-            -d "grant_type=refresh_token")
-          ACCESS_TOKEN=$(python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('access_token',''))" <<< "$TOKEN_RESPONSE")
-          [[ -n "$ACCESS_TOKEN" ]] || { echo "::error::Unable to mint OAuth token"; echo "$TOKEN_RESPONSE"; exit 1; }
-          echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> "$GITHUB_ENV"
-
-      - name: Upload package to Chrome Web Store draft
-        env:
-          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
-          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
-        run: |
-          HTTP_CODE=$(curl -sS -o cws-upload.json -w "%{http_code}" \
-            -H "Authorization: Bearer $ACCESS_TOKEN" \
-            -X POST \
-            -T "$ZIP_FILE" \
-            "https://chromewebstore.googleapis.com/upload/v2/publishers/${CWS_PUBLISHER_ID}/items/${CWS_EXTENSION_ID}:upload")
-          cat cws-upload.json
-          [[ "$HTTP_CODE" =~ ^2 ]] || { echo "::error::CWS upload failed with status $HTTP_CODE"; exit 1; }
-
-      - name: Publish uploaded draft in Chrome Web Store
-        env:
-          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
-          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
-        run: |
-          HTTP_CODE=$(curl -sS -o cws-publish.json -w "%{http_code}" \
-            -H "Authorization: Bearer $ACCESS_TOKEN" \
-            -X POST \
-            "https://chromewebstore.googleapis.com/v2/publishers/${CWS_PUBLISHER_ID}/items/${CWS_EXTENSION_ID}:publish")
-          cat cws-publish.json
-          [[ "$HTTP_CODE" =~ ^2 ]] || { echo "::error::CWS publish failed with status $HTTP_CODE"; exit 1; }
-
   publish-firefox:
     name: Sign Firefox Package and Update Feed
     runs-on: ubuntu-latest
