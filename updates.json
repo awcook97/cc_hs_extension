@@ -1,7 +1,12 @@
 {
   "addons": {
     "cc-hs-extension@awcook97.github.io": {
-      "updates": []
+      "updates": [
+        {
+          "version": "0.2.1",
+          "update_link": "https://awcook97.github.io/cc_hs_extension/firefox/latest/hubspot-companycam-viewer.xpi"
+        }
+      ]
     }
   }
 }
